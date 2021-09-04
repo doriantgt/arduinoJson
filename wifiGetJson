@@ -1,0 +1,232 @@
+/*
+ *  This sketch sends data via HTTP GET requests to data.sparkfun.com service.
+ *
+ *  You need to get streamId and privateKey at data.sparkfun.com and paste them
+ *  below. Or just customize this script to talk to other HTTP servers.
+ *
+ */
+
+
+struct jsonStrings{ 
+
+String id;
+String userName;
+String alarmType;
+String alarmTime;
+String autoOff;
+  
+};
+
+struct alarmData{ 
+
+uint32_t daySeconds;
+int alarmType;
+  
+};
+
+uint32_t StringTimeDaySeconds(String stringTime){
+ uint32_t seconds;
+ String temp ="12";
+  temp.setCharAt(0,stringTime.charAt(0));
+  temp.setCharAt(1,stringTime.charAt(1));
+  seconds = temp.toInt()*60*60;
+  temp.setCharAt(0,stringTime.charAt(3));
+  temp.setCharAt(1,stringTime.charAt(4));
+  seconds += temp.toInt()*60;
+  temp.setCharAt(0,stringTime.charAt(6));
+  temp.setCharAt(1,stringTime.charAt(7));
+  seconds += temp.toInt();
+
+  return seconds;
+}
+
+uint32_t CharptrTimeDaySeconds(const char* stringTime){
+ uint32_t seconds;
+// String temp ="12";
+ char temp[] = {'2','2'};
+  temp[0]=stringTime[1];
+  temp[1]=stringTime[1];
+  
+  seconds = (int)temp*60*60;
+   temp[0]=stringTime[3];
+  temp[1]=stringTime[4];
+  seconds += (int)temp*60;
+    temp[0]=stringTime[6];
+  temp[1]=stringTime[7];
+  seconds += (int)temp*60;
+
+  return seconds;
+}
+
+
+
+    
+#include <WiFi.h>
+#include <ArduinoJson.h>
+
+//const char* ssid     = "wookwifi";
+//const char* password = "Bassnectar6!";
+const char* ssid     = "artholez";
+const char* password = "dorian123";
+
+const char* host = "ec2-18-237-26-31.us-west-2.compute.amazonaws.com";
+const char* streamId   = "....................";
+const char* privateKey = "....................";
+
+void setup()
+{
+    Serial.begin(115200);
+    delay(10);
+
+    // We start by connecting to a WiFi network
+
+    Serial.println();
+    Serial.println();
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+
+    WiFi.begin(ssid, password);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+}
+
+int value = 0;
+
+void loop()
+{
+    delay(5000);
+    ++value;
+
+    Serial.print("connecting to ");
+    Serial.println(host);
+
+    // Use WiFiClient class to create TCP connections
+    WiFiClient client;
+    const int httpPort = 80;
+    if (!client.connect(host, httpPort)) {
+        Serial.println("connection failed");
+        return;
+    }
+
+    // We now create a URI for the request
+    String url = "/input/";
+    url += streamId;
+    url += "?private_key=";
+    url += privateKey;
+    url += "&value=";
+    url += value;
+
+    Serial.print("Requesting URL: ");
+    Serial.println(url);
+
+    // This will send the request to the server
+    client.print(String("POST ") + "/arduino/practice/getJsonData.php" + " HTTP/1.1\r\n" +
+                 "Host: " + host + "\r\n" + 
+                  "Content-Type: application/x-www-form-urlencoded" + "\r\n" + 
+                  "Content-Length: 20" + "\r\n\r\n" + //change content lenght for post
+                  "userName=samepass" + "\r\n\r\n");  //maybe make dynamic
+                 // "userName=samepass&password=password" + "\r\n\r\n");
+                  //"Connection: close\r\n\r\n");
+    unsigned long timeout = millis();
+    while (client.available() == 0) {
+        if (millis() - timeout > 5000) {
+            Serial.println(">>> Client Timeout !");
+            client.stop();
+            return;
+        }
+    }
+
+  // Check HTTP status
+  char status[32] = {0};
+  client.readBytesUntil('\r', status, sizeof(status));
+  // It should be "HTTP/1.0 200 OK" or "HTTP/1.1 200 OK"
+  if (strcmp(status + 9, "200 OK") != 0) {
+    Serial.print(F("Unexpected response: "));
+    Serial.println(status);
+    return;
+  }
+
+  // Skip HTTP headers
+  char endOfHeaders[] = "\r\n\r\n";
+  if (!client.find(endOfHeaders)) {
+    Serial.println(F("Invalid response"));
+    return;
+  }
+
+  // Allocate the JSON document
+  // Use arduinojson.org/v6/assistant to compute the capacity.
+  // copy paste you json code to in to the textArea on this page.
+const size_t capacity = JSON_ARRAY_SIZE(7) + 8*JSON_OBJECT_SIZE(2) + 130;
+DynamicJsonDocument doc(capacity);  
+
+
+
+  // Parse JSON object
+  DeserializationError error = deserializeJson(doc, client);
+  
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+    return;
+  }
+
+  // Extract values
+  
+  Serial.println(F("Response:"));
+  String namer = doc["name1"].as<char*>();
+  Serial.println(namer);
+  
+  
+  int alarmCount = doc["count"]; // 7
+  if(alarmCount>7)alarmCount=7; //maximum alarms == 7
+
+JsonArray alarms = doc["alarms"];
+
+jsonStrings datas[7];
+for(int i=0; i<alarmCount; i++){
+ 
+  const char* temp = alarms[i]["alarmTime"];
+   datas[i].alarmTime =temp;
+   datas[i].alarmType = alarms[i]["alarmType"].as<char*>();
+
+     Serial.println( datas[i].alarmTime);
+     Serial.println( StringTimeDaySeconds(alarms[i]["alarmTime"]));
+     Serial.println( datas[i].alarmType);
+}
+
+
+
+
+   /*
+   Serial.println(root_0_alarmTime);
+   Serial.println(root_0_alarmTime.charAt(1));
+   Serial.println(StringTimeDaySeconds(root_0_alarmTime));
+   Serial.println(root_0_alarmTime.charAt(3));*/
+
+  /*
+  Serial.println(doc["sensor"].as<char*>());
+  Serial.println(doc["time"].as<long>());
+  Serial.println(doc["data"][0].as<float>(), 6);
+  Serial.println(doc["data"][1].as<float>(), 6);
+*/
+  // Disconnect
+/* //print all of the stuff
+    // Read all the lines of the reply from server and print them to Serial
+    while(client.available()) {
+        String line = client.readStringUntil('\r');
+        Serial.print(line);
+    }
+*/
+  client.stop();
+
+    Serial.println();
+    Serial.println("closing connection");
+}
